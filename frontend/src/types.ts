@@ -7,6 +7,8 @@ export interface Room {
   id: number;
   name: string;
   is_private: boolean;
+  created_by: number;
+  created_by_username: string;
 }
 
 export interface ChatMessage {
@@ -21,4 +23,9 @@ export interface ChatMessage {
 export interface SystemMessage {
   type: "userJoined" | "userLeft";
   user: { id: number; username: string };
+}
+
+export interface RoomMember {
+  id: number;
+  username: string;
 }

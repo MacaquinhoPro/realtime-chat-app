@@ -1,20 +1,28 @@
-import { Server as HttpServer } from "http";
 import { Server } from "socket.io";
+import { Server as HttpServer } from "http";
 import jwt from "jsonwebtoken";
-import { getChannel } from "../config/rabbitmq";
+import { mq } from "../config/rabbitmq";
+import { db } from "../config/db";
+
+interface JwtPayload {
+  id: number;
+  username: string;
+}
 
 export function initWebSocketServer(server: HttpServer) {
-  const io = new Server(server, {
-    cors: {
-      origin: "*",
-    },
-  });
+  const io = new Server(server, { cors: { origin: "*" } });
 
   io.use((socket, next) => {
-    const token = socket.handshake.auth.token;
     try {
-      const payload = jwt.verify(token, process.env.JWT_SECRET!);
-      (socket as any).user = payload;
+      const { token } = socket.handshake.auth as { token?: string };
+      if (!token) {
+        return next(new Error("Unauthorized"));
+      }
+      const user = jwt.verify(
+        token,
+        process.env.JWT_SECRET!
+      ) as JwtPayload;
+      (socket as any).user = user;
       next();
     } catch {
       next(new Error("Unauthorized"));
@@ -22,47 +30,67 @@ export function initWebSocketServer(server: HttpServer) {
   });
 
   io.on("connection", (socket) => {
-    const user = (socket as any).user;
+    const user = (socket as any).user as JwtPayload;
 
     socket.on("joinRoom", ({ roomId }) => {
-      socket.join(`room:${roomId}`);
-      // Notificación de entrada
-      io.to(`room:${roomId}`).emit("systemMessage", {
-        type: "userJoined",
-        user,
-        roomId,
+      socket.join("room:" + roomId);
+      io.to("room:" + roomId).emit("systemMessage", {
+        type: "userJoined" as const,
+        user: { id: user.id, username: user.username },
       });
     });
 
     socket.on("leaveRoom", ({ roomId }) => {
-      socket.leave(`room:${roomId}`);
-      io.to(`room:${roomId}`).emit("systemMessage", {
-        type: "userLeft",
-        user,
-        roomId,
+      socket.leave("room:" + roomId);
+      io.to("room:" + roomId).emit("systemMessage", {
+        type: "userLeft" as const,
+        user: { id: user.id, username: user.username },
       });
     });
 
-    socket.on("sendMessage", async ({ roomId, content }) => {
-      const channel = getChannel();
-      const payload = JSON.stringify({ roomId, userId: user.id, content, ts: Date.now() });
+    socket.on(
+      "sendMessage",
+      async ({ roomId, content }: { roomId: number; content: string }) => {
+        const msg = {
+          roomId,
+          userId: user.id,
+          username: user.username,
+          content,
+          ts: Date.now(),
+        };
 
-      // Publicas en el broker
-      channel.publish("chat.exchange", `room.${roomId}.message`, Buffer.from(payload));
-    });
+        mq().publish(
+          "chat.exchange",
+          `room.${roomId}.message`,
+          Buffer.from(JSON.stringify(msg))
+        );
+      }
+    );
   });
 
-  // Consumidor RabbitMQ para retransmitir al WS
   (async () => {
-    const channel = getChannel();
+    const channel = mq();
     const q = await channel.assertQueue("", { exclusive: true });
     await channel.bindQueue(q.queue, "chat.exchange", "room.*.message");
 
-    channel.consume(q.queue, (msg) => {
-      if (!msg) return;
-      const data = JSON.parse(msg.content.toString());
-      io.to(`room:${data.roomId}`).emit("message", data);
-      channel.ack(msg);
+    channel.consume(q.queue, async (rawMsg) => {
+      if (!rawMsg) return;
+      const data = JSON.parse(rawMsg.content.toString()) as {
+        roomId: number;
+        userId: number;
+        username: string;
+        content: string;
+        ts: number;
+      };
+
+      await db().query(
+        "INSERT INTO messages(room_id, user_id, content) VALUES ($1, $2, $3)",
+        [data.roomId, data.userId, data.content]
+      );
+
+      io.to("room:" + data.roomId).emit("message", data);
+
+      channel.ack(rawMsg);
     });
   })();
 }

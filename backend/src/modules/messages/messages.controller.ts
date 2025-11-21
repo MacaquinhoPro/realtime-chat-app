@@ -7,10 +7,20 @@ export async function getHistory(req: Request, res: Response) {
   const pageSize = Number(req.query.pageSize || 20);
   const offset = (page - 1) * pageSize;
 
-  const rows = await db().query(
-    "SELECT * FROM messages WHERE room_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+  const result = await db().query(
+    `SELECT m.id,
+            m.room_id,
+            m.user_id,
+            m.content,
+            m.created_at,
+            u.username
+     FROM messages m
+     JOIN users u ON u.id = m.user_id
+     WHERE m.room_id = $1
+     ORDER BY m.created_at DESC
+     LIMIT $2 OFFSET $3`,
     [roomId, pageSize, offset]
   );
 
-  res.json(rows.rows);
+  return res.json(result.rows);
 }

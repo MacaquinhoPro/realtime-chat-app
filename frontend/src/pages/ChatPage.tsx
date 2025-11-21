@@ -22,7 +22,10 @@ const ChatPage: React.FC<Props> = ({ token, username, onLogout }) => {
     joinRoom,
     leaveCurrentRoom,
     sendMessage,
-    createRoom
+    createRoom,
+    renameRoom,
+    deleteRoom,
+    fetchMembers,
   } = useChat(token);
 
   useEffect(() => {
@@ -31,6 +34,21 @@ const ChatPage: React.FC<Props> = ({ token, username, onLogout }) => {
 
   async function handleJoin(room: Room, password?: string) {
     await joinRoom(room, password);
+  }
+
+  const isOwner =
+    !!currentRoom &&
+    !!username &&
+    currentRoom.created_by_username === username;
+
+  async function handleDeleteRoom() {
+    if (!currentRoom) return;
+    await deleteRoom(currentRoom.id);
+  }
+
+  async function handleRenameRoom(newName: string) {
+    if (!currentRoom) return;
+    await renameRoom(currentRoom.id, newName);
   }
 
   return (
@@ -59,6 +77,10 @@ const ChatPage: React.FC<Props> = ({ token, username, onLogout }) => {
           loadingMessages={loadingMessages}
           onSendMessage={sendMessage}
           onLeaveRoom={leaveCurrentRoom}
+          isOwner={isOwner}
+          onRenameRoom={handleRenameRoom}
+          onDeleteRoom={handleDeleteRoom}
+          onFetchMembers={fetchMembers}
         />
       </div>
     </MainLayout>

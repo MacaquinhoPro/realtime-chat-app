@@ -1,12 +1,23 @@
 import { useEffect, useState } from "react";
 import api from "../services/api";
-import { connectSocket, disconnectSocket, getSocket } from "../services/socket";
-import type { Room, ChatMessage, SystemMessage } from "../types";
+import {
+  connectSocket,
+  disconnectSocket,
+  getSocket,
+} from "../services/socket";
+import type {
+  Room,
+  ChatMessage,
+  SystemMessage,
+  RoomMember,
+} from "../types";
 
 export function useChat(token: string | null) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
-  const [messages, setMessages] = useState<(ChatMessage | SystemMessage)[]>([]);
+  const [messages, setMessages] = useState<
+    (ChatMessage | SystemMessage)[]
+  >([]);
   const [loadingRooms, setLoadingRooms] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
 
@@ -53,11 +64,12 @@ export function useChat(token: string | null) {
 
   async function fetchMessages(roomId: number, page = 1) {
     setLoadingMessages(true);
-    const res = await api.get(`/messages/${roomId}`, {
-      params: { page, pageSize: 30 }
+    const res = await api.get<ChatMessage[]>(`/messages/${roomId}`, {
+      params: { page, pageSize: 30 },
     });
-    const history = res.data as ChatMessage[];
-    setMessages(history.reverse()); // más antiguos arriba
+    const history = res.data;
+    // los más antiguos primero
+    setMessages(history.reverse());
     setLoadingMessages(false);
   }
 
@@ -67,9 +79,40 @@ export function useChat(token: string | null) {
     s?.emit("sendMessage", { roomId: currentRoom.id, content });
   }
 
-  async function createRoom(name: string, is_private: boolean, password?: string) {
+  async function createRoom(
+    name: string,
+    is_private: boolean,
+    password?: string
+  ) {
     await api.post("/rooms", { name, is_private, password });
     await fetchRooms();
+  }
+
+  // 🔹 Renombrar sala (solo creador)
+  async function renameRoom(roomId: number, newName: string) {
+    await api.patch(`/rooms/${roomId}`, { name: newName });
+    setRooms((prev) =>
+      prev.map((r) => (r.id === roomId ? { ...r, name: newName } : r))
+    );
+    setCurrentRoom((prev) =>
+      prev && prev.id === roomId ? { ...prev, name: newName } : prev
+    );
+  }
+
+  // 🔹 Eliminar sala (solo creador)
+  async function deleteRoom(roomId: number) {
+    await api.delete(`/rooms/${roomId}`);
+    setRooms((prev) => prev.filter((r) => r.id !== roomId));
+    setCurrentRoom((prev) => (prev && prev.id === roomId ? null : prev));
+    setMessages((prev) =>
+      currentRoom && currentRoom.id === roomId ? [] : prev
+    );
+  }
+
+  // 🔹 Obtener miembros de una sala
+  async function fetchMembers(roomId: number): Promise<RoomMember[]> {
+    const res = await api.get<RoomMember[]>(`/rooms/${roomId}/members`);
+    return res.data;
   }
 
   return {
@@ -82,6 +125,9 @@ export function useChat(token: string | null) {
     joinRoom,
     leaveCurrentRoom,
     sendMessage,
-    createRoom
+    createRoom,
+    renameRoom,
+    deleteRoom,
+    fetchMembers,
   };
 }

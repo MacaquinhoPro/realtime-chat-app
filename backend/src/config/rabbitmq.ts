@@ -1,20 +1,18 @@
-import amqp, { Connection, Channel } from "amqplib";
+// backend/src/config/rabbitmq.ts
+import amqp, { Channel } from "amqplib";
 
-let connection: Connection;
 let channel: Channel;
 
 export async function connectRabbitMQ() {
-  connection = await amqp.connect(process.env.RABBITMQ_URL!);
-  channel = await connection.createChannel();
+  const conn = await amqp.connect(process.env.RABBITMQ_URL!);
+  channel = await conn.createChannel();
   await channel.assertExchange("chat.exchange", "topic", { durable: true });
   console.log("RabbitMQ connected");
 }
 
-export function getChannel() {
-  if (!channel) throw new Error("Channel not initialized");
+export function mq(): Channel {
+  if (!channel) {
+    throw new Error("RabbitMQ channel not initialized. Call connectRabbitMQ() first.");
+  }
   return channel;
 }
-export function mq() {
-  throw new Error("Function not implemented.");
-}
-
