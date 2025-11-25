@@ -26,6 +26,7 @@
     "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "autoprefixer": "^10.4.22",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.17"
